@@ -1,0 +1,113 @@
+{
+  "_comment": "FlowAI Voice Agent — Sarah. Konfiguration für VAPI Dashboard.",
+  "_setup": [
+    "1. VAPI-Account erstellen: https://vapi.ai",
+    "2. Neuen Assistenten erstellen",
+    "3. Diese Konfiguration einfügen",
+    "4. VAPI_PUBLIC_KEY und VAPI_ASSISTANT_ID in .env.local eintragen"
+  ],
+  "name": "Sarah — FlowAI BD Agent",
+  "firstMessage": "Hallo! Ich bin Sarah von FlowAI. Sie haben kürzlich unsere Case Study über Lead-Reaktivierung gelesen – herzlichen Glückwunsch zur Initiative! Ich rufe kurz an, um zu sehen, ob das auch für Sie relevante Einblicke hatte. Haben Sie zwei Minuten?",
+  "transcriber": {
+    "provider": "deepgram",
+    "model": "nova-2",
+    "language": "de"
+  },
+  "model": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "systemPrompt": "[Inhalt aus prompts/sarah-system-prompt.md einfügen]",
+    "temperature": 0.7,
+    "maxTokens": 1024
+  },
+  "voice": {
+    "provider": "azure",
+    "voiceId": "de-DE-KatjaNeural"
+  },
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "qualifyLead",
+        "description": "Speichere Lead-Qualifizierungsdaten wenn alle 4 Kernkriterien erfasst wurden",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "company_size": {
+              "type": "string",
+              "description": "Unternehmensgröße / Mitarbeiteranzahl"
+            },
+            "budget": {
+              "type": "string",
+              "description": "Monatliches Budget in Euro"
+            },
+            "is_decision_maker": {
+              "type": "boolean",
+              "description": "Ist die Person der finale Entscheider?"
+            },
+            "timeline": {
+              "type": "string",
+              "description": "Zeitplan für Implementierung (z.B. '1 Monat', 'sofort', '3 Monate')"
+            },
+            "pain_point": {
+              "type": "string",
+              "description": "Hauptproblem / Schmerzpunkt des Leads"
+            },
+            "current_tools": {
+              "type": "string",
+              "description": "Aktuell genutzte CRM oder Vertriebstools"
+            },
+            "lead_name": {
+              "type": "string",
+              "description": "Name des Ansprechpartners"
+            },
+            "lead_email": {
+              "type": "string",
+              "description": "E-Mail-Adresse (falls bekannt)"
+            }
+          },
+          "required": ["company_size", "budget", "is_decision_maker", "timeline"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "bookDemoAppointment",
+        "description": "Buche einen 30-minütigen Demo-Termin für den Lead",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "lead_name": {
+              "type": "string",
+              "description": "Vollständiger Name des Leads"
+            },
+            "lead_email": {
+              "type": "string",
+              "description": "E-Mail-Adresse des Leads"
+            },
+            "preferred_time": {
+              "type": "string",
+              "description": "Gewünschter Termin als ISO 8601 (z.B. '2026-03-05T14:00:00')"
+            }
+          },
+          "required": ["lead_name", "lead_email"]
+        }
+      }
+    }
+  ],
+  "endCallMessage": "Vielen Dank für das Gespräch! Sie erhalten gleich eine Kalendereinladung. Ich freue mich auf unsere Demo. Auf Wiedersehen!",
+  "endCallPhrases": [
+    "Auf Wiedersehen",
+    "Tschüss",
+    "Danke, tschüss",
+    "Bye"
+  ],
+  "silenceTimeoutSeconds": 30,
+  "maxDurationSeconds": 600,
+  "backgroundSound": "off",
+  "backchannelingEnabled": true,
+  "analysisPlan": {
+    "summaryPrompt": "Erstelle eine kurze Zusammenfassung des Gesprächs auf Deutsch: Wer war der Lead, was war ihr Problem, was wurde besprochen, und was ist der nächste Schritt?"
+  }
+}
