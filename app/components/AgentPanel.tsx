@@ -112,18 +112,18 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
       if (msg.type === "transcript" && msg.transcriptType === "final") {
         const text: string = msg.transcript || "";
 
-        // LEAD_DATA Marker erkennen
+        // Marker aus Text entfernen
+        let cleanText = text
+          .replace(/LEAD_DATA:\{[^}]+\}/g, "")
+          .replace(/BOOKING:\{[^}]+\}/g, "")
+          .trim();
+
+        // LEAD_DATA Marker verarbeiten
         const leadMatch = text.match(/LEAD_DATA:(\{[^}]+\})/);
         if (leadMatch) {
           try {
             const data = JSON.parse(leadMatch[1]);
             setQualification(data);
-            // Sauber anzeigen — Marker aus Transkript entfernen
-            const cleanText = text.replace(/LEAD_DATA:\{[^}]+\}/, "").trim();
-            if (cleanText) {
-              setTranscript((prev) => [...prev, { role: msg.role, text: cleanText }]);
-            }
-            // Lead-Score berechnen und speichern
             fetch("/api/qualify-lead", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -131,11 +131,10 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
             })
               .then((r) => r.json())
               .then((d) => setLeadScore(d.lead_score));
-            return;
-          } catch { /* JSON Parse-Fehler ignorieren */ }
+          } catch { /* ignorieren */ }
         }
 
-        // BOOKING Marker erkennen
+        // BOOKING Marker verarbeiten
         const bookingMatch = text.match(/BOOKING:(\{[^}]+\})/);
         if (bookingMatch) {
           try {
@@ -149,15 +148,23 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
                 .then((r) => r.json())
                 .then((d) => { if (d.success) setAppointmentBooked(true); });
             }
-            const cleanText = text.replace(/BOOKING:\{[^}]+\}/, "").trim();
-            if (cleanText) {
-              setTranscript((prev) => [...prev, { role: msg.role, text: cleanText }]);
-            }
-            return;
           } catch { /* ignorieren */ }
         }
 
-        setTranscript((prev) => [...prev, { role: msg.role, text: text }]);
+        if (!cleanText) return;
+
+        // Gleicher Sprecher — letzte Nachricht erweitern statt neue Blase
+        setTranscript((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1].role === msg.role) {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              text: updated[updated.length - 1].text + " " + cleanText,
+            };
+            return updated;
+          }
+          return [...prev, { role: msg.role, text: cleanText }];
+        });
       }
     });
 
