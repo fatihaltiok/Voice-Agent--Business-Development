@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Loader2, CheckCircle2, Clock, Users, Wallet, Calendar, Target } from "lucide-react";
 
 type CallStatus = "idle" | "connecting" | "active" | "ended";
@@ -27,7 +27,23 @@ interface AgentPanelProps {
 const SARAH_FIRST_MESSAGE =
   "Hallo! Ich bin Sarah von FlowAI. Sie haben kürzlich unsere Case Study über Lead-Reaktivierung gelesen – herzlichen Glückwunsch zur Initiative! Ich rufe kurz an, um zu sehen, ob das auch für Sie relevante Einblicke hatte. Haben Sie zwei Minuten?";
 
-const SARAH_SYSTEM_PROMPT = `Du bist Sarah, eine erfahrene Business Development Managerin bei FlowAI, einer KI-gestützten Vertriebsautomatisierungsplattform. Deine Aufgabe: Führe ein natürliches Erstgespräch mit einem Lead, der unsere Case Study über Lead-Reaktivierung gelesen hat. Qualifiziere den Lead (Unternehmensgröße, Budget, Entscheidungsbefugnis, Zeitplan) und buche einen Demo-Termin. Verwende qualifyLead sobald alle 4 Kriterien bekannt sind. Verwende bookDemoAppointment wenn der Lead zustimmt. Keine starren Skripte — reagiere natürlich. Sprache: Deutsch.`;
+const SARAH_SYSTEM_PROMPT = `Du bist Sarah, eine erfahrene Business Development Managerin bei FlowAI, einer KI-gestützten Vertriebsautomatisierungsplattform für B2B-Unternehmen.
+
+Deine Aufgabe: Führe ein natürliches Erstgespräch mit einem Lead, der unsere Case Study über Lead-Reaktivierung gelesen hat. Qualifiziere den Lead und vereinbare wenn möglich einen Demo-Termin.
+
+Qualifiziere mind. diese 4 Kriterien im Gespräch:
+1. Unternehmensgröße / Mitarbeiteranzahl
+2. Budget (monatlicher Investitionsrahmen)
+3. Entscheidungsbefugnis (Entscheider ja/nein)
+4. Zeitplan (wann wollen sie starten)
+
+Wenn du alle 4 Kriterien erfasst hast, gib EINMALIG am Ende einer Antwort diesen Block aus (unsichtbar für den Lead, nur für System):
+LEAD_DATA:{"company_size":"...","budget":"...","is_decision_maker":true,"timeline":"...","pain_point":"...","lead_name":"..."}
+
+Wenn der Lead einem Demo-Termin zustimmt, gib aus:
+BOOKING:{"confirmed":true,"lead_name":"...","lead_email":"..."}
+
+Regeln: Kein starres Skript. Reagiere natürlich. Aktives Zuhören. Sprache: Deutsch, professionell aber herzlich.`;
 
 export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
   const vapiRef = useRef<any>(null);
@@ -58,80 +74,6 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
 
   const formatDuration = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
-
-  const handleToolCall = useCallback(
-    async (toolCallList: any[]) => {
-      if (!vapiRef.current) return;
-
-      const results: { toolCallId: string; result: string }[] = [];
-
-      for (const toolCall of toolCallList) {
-        const { id, function: fn } = toolCall;
-        const params =
-          typeof fn.arguments === "string"
-            ? JSON.parse(fn.arguments)
-            : fn.arguments;
-
-        let result = "";
-
-        if (fn.name === "qualifyLead") {
-          setQualification(params);
-
-          try {
-            const res = await fetch("/api/qualify-lead", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...params,
-                vapi_call_id: callIdRef.current,
-              }),
-            });
-            const data = await res.json();
-            setLeadScore(data.lead_score);
-            result = `Lead qualifiziert. Score: ${data.lead_score}. Kriterien gespeichert.`;
-          } catch {
-            result = "Lead-Daten erfasst.";
-          }
-        }
-
-        if (fn.name === "bookDemoAppointment") {
-          try {
-            const res = await fetch("/api/book-demo", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...params,
-                vapi_call_id: callIdRef.current,
-              }),
-            });
-            const data = await res.json();
-            if (data.success) {
-              setAppointmentBooked(true);
-              result = `Termin erfolgreich gebucht! ${data.message || ""}`;
-            } else {
-              result =
-                "Entschuldigung, bei der Buchung gab es ein technisches Problem. Ihr Wunschtermin wurde notiert.";
-            }
-          } catch {
-            result = "Termin notiert. Details folgen per E-Mail.";
-          }
-        }
-
-        results.push({ toolCallId: id, result });
-      }
-
-      // Ergebnis an VAPI zurücksenden
-      vapiRef.current.send({
-        type: "add-message",
-        message: {
-          role: "tool",
-          toolCallId: results[0]?.toolCallId,
-          content: results[0]?.result || "",
-        },
-      });
-    },
-    []
-  );
 
   const startCall = async () => {
     const publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY;
@@ -168,20 +110,67 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
 
     vapi.on("message", async (msg: any) => {
       if (msg.type === "transcript" && msg.transcriptType === "final") {
-        setTranscript((prev) => [
-          ...prev,
-          { role: msg.role, text: msg.transcript },
-        ]);
-      }
+        const text: string = msg.transcript || "";
 
-      if (msg.type === "tool-calls" && msg.toolCallList) {
-        await handleToolCall(msg.toolCallList);
+        // LEAD_DATA Marker erkennen
+        const leadMatch = text.match(/LEAD_DATA:(\{[^}]+\})/);
+        if (leadMatch) {
+          try {
+            const data = JSON.parse(leadMatch[1]);
+            setQualification(data);
+            // Sauber anzeigen — Marker aus Transkript entfernen
+            const cleanText = text.replace(/LEAD_DATA:\{[^}]+\}/, "").trim();
+            if (cleanText) {
+              setTranscript((prev) => [...prev, { role: msg.role, text: cleanText }]);
+            }
+            // Lead-Score berechnen und speichern
+            fetch("/api/qualify-lead", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...data, vapi_call_id: callIdRef.current }),
+            })
+              .then((r) => r.json())
+              .then((d) => setLeadScore(d.lead_score));
+            return;
+          } catch { /* JSON Parse-Fehler ignorieren */ }
+        }
+
+        // BOOKING Marker erkennen
+        const bookingMatch = text.match(/BOOKING:(\{[^}]+\})/);
+        if (bookingMatch) {
+          try {
+            const data = JSON.parse(bookingMatch[1]);
+            if (data.confirmed) {
+              fetch("/api/book-demo", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...data, vapi_call_id: callIdRef.current }),
+              })
+                .then((r) => r.json())
+                .then((d) => { if (d.success) setAppointmentBooked(true); });
+            }
+            const cleanText = text.replace(/BOOKING:\{[^}]+\}/, "").trim();
+            if (cleanText) {
+              setTranscript((prev) => [...prev, { role: msg.role, text: cleanText }]);
+            }
+            return;
+          } catch { /* ignorieren */ }
+        }
+
+        setTranscript((prev) => [...prev, { role: msg.role, text: text }]);
       }
     });
 
     vapi.on("error", (e: any) => {
-      console.error("VAPI Error:", e);
-      setError(`Fehler: ${e?.message || "Verbindung fehlgeschlagen"}`);
+      console.error("VAPI Error raw:", JSON.stringify(e));
+      const msg = e?.message || e?.error?.message || e?.errorMsg || JSON.stringify(e);
+      if (msg && msg !== "{}") {
+        setError(`VAPI Fehler: ${msg}`);
+      } else {
+        setError(
+          "Verbindung fehlgeschlagen. Bitte Provider-Key (OpenAI oder Anthropic) im VAPI-Dashboard unter 'Provider Keys' hinterlegen."
+        );
+      }
       setStatus("idle");
     });
 
@@ -190,10 +179,10 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
     const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
 
     if (assistantId) {
-      // Vorkonfigurierter Assistent
+      // Vorkonfigurierter Assistent aus VAPI Dashboard
       await vapi.start(assistantId);
     } else {
-      // Inline-Konfiguration (kein VAPI-Dashboard nötig)
+      // Inline-Konfiguration — benötigt OpenAI Key in VAPI Dashboard → Provider Keys
       await vapi.start({
         name: "Sarah",
         firstMessage: SARAH_FIRST_MESSAGE,
@@ -203,62 +192,16 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
           language: "de",
         },
         model: {
-          provider: "anthropic",
-          model: "claude-sonnet-4-6",
+          provider: "openai",
+          model: "gpt-4o-mini",
           systemPrompt: SARAH_SYSTEM_PROMPT,
           temperature: 0.7,
           maxTokens: 512,
-          toolIds: [],
         },
         voice: {
-          provider: "azure",
-          voiceId: "de-DE-KatjaNeural",
+          provider: "openai",
+          voiceId: "nova",
         },
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "qualifyLead",
-              description:
-                "Speichere Lead-Daten wenn alle 4 Pflichtkriterien erfasst sind",
-              parameters: {
-                type: "object" as const,
-                properties: {
-                  company_size: { type: "string" },
-                  budget: { type: "string" },
-                  is_decision_maker: { type: "boolean" },
-                  timeline: { type: "string" },
-                  pain_point: { type: "string" },
-                  current_tools: { type: "string" },
-                  lead_name: { type: "string" },
-                  lead_email: { type: "string" },
-                },
-                required: [
-                  "company_size",
-                  "budget",
-                  "is_decision_maker",
-                  "timeline",
-                ],
-              },
-            },
-          },
-          {
-            type: "function",
-            function: {
-              name: "bookDemoAppointment",
-              description: "Buche einen 30-minütigen Demo-Termin",
-              parameters: {
-                type: "object" as const,
-                properties: {
-                  lead_name: { type: "string" },
-                  lead_email: { type: "string" },
-                  preferred_time: { type: "string" },
-                },
-                required: ["lead_name", "lead_email"],
-              },
-            },
-          },
-        ],
       } as any);
     }
   };
