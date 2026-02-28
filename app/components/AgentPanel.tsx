@@ -199,8 +199,8 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
           maxTokens: 512,
         },
         voice: {
-          provider: "openai",
-          voiceId: "nova",
+          provider: "inworld",
+          voiceId: "Lennart",
         },
       } as any);
     }

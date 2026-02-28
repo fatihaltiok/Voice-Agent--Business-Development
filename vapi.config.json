@@ -21,8 +21,8 @@
     "maxTokens": 1024
   },
   "voice": {
-    "provider": "azure",
-    "voiceId": "de-DE-KatjaNeural"
+    "provider": "inworld",
+    "voiceId": "Lennart"
   },
   "tools": [
     {
