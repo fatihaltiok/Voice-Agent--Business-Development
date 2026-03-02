@@ -236,6 +236,6 @@ flowai-voice-agent/
 
 ---
 
-## Autoren
+## Autor
 
-Fatih Altiok & Claude
+Fatih Altiok 
