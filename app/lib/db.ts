@@ -57,6 +57,9 @@ function initSchema(database: Database.Database) {
       pain_point TEXT,
       current_tools TEXT
     );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_data_call_id_unique
+    ON lead_data(call_id);
   `);
 }
 

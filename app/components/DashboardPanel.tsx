@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { TrendingUp, Clock, Phone, Users, CheckCircle2, XCircle, ChevronRight } from "lucide-react";
+import { TrendingUp, Clock, Phone, CheckCircle2, XCircle, ChevronRight } from "lucide-react";
 import type { DashboardData, CallWithLeadData } from "@/app/lib/types";
 
 const STAGE_LABELS: Record<string, string> = {

@@ -7,6 +7,22 @@ export interface BookingResult {
   error?: string;
 }
 
+interface CalComBookingResponse {
+  uid?: string;
+  startTime?: string;
+  message?: string;
+}
+
+async function parseResponse(response: Response): Promise<CalComBookingResponse> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as CalComBookingResponse;
+  } catch {
+    return { message: text };
+  }
+}
+
 export async function bookDemoAppointment(params: {
   name: string;
   email: string;
@@ -40,28 +56,43 @@ export async function bookDemoAppointment(params: {
     const startDate = new Date(params.preferred_time || Date.now() + 86400000);
     const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
 
-    const response = await fetch(
-      `https://api.cal.com/v1/bookings?apiKey=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          eventTypeId: parseInt(eventTypeId),
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-          responses: {
-            name: params.name,
-            email: params.email,
-            location: { value: "integrations:daily", optionValue: "" },
-          },
-          timeZone: "Europe/Berlin",
-          language: "de",
-          metadata: {},
-        }),
-      }
-    );
+    const payload = {
+      eventTypeId: parseInt(eventTypeId, 10),
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      responses: {
+        name: params.name,
+        email: params.email,
+        location: { value: "integrations:daily", optionValue: "" },
+      },
+      timeZone: "Europe/Berlin",
+      language: "de",
+      metadata: {},
+    };
 
-    const data = await response.json();
+    // Bevorzugt Key per Authorization-Header (nicht im Query-String logbar).
+    let response = await fetch("https://api.cal.com/v1/bookings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    // Fallback für ältere Cal.com-Konfigurationen.
+    if (!response.ok && (response.status === 401 || response.status === 403)) {
+      response = await fetch(
+        `https://api.cal.com/v1/bookings?apiKey=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+    }
+
+    const data = await parseResponse(response);
 
     if (!response.ok) {
       return { success: false, error: data.message || "Buchung fehlgeschlagen" };
@@ -72,13 +103,15 @@ export async function bookDemoAppointment(params: {
       booking_url: data.uid ? `https://cal.com/booking/${data.uid}` : undefined,
       booking_id: data.uid,
       start_time: data.startTime,
-      message: `Termin am ${new Date(data.startTime).toLocaleString("de-DE", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        hour: "2-digit",
-        minute: "2-digit",
-      })} Uhr gebucht.`,
+      message: data.startTime
+        ? `Termin am ${new Date(data.startTime).toLocaleString("de-DE", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            hour: "2-digit",
+            minute: "2-digit",
+          })} Uhr gebucht.`
+        : "Termin gebucht.",
     };
   } catch {
     return { success: false, error: "Verbindung zu Cal.com fehlgeschlagen" };

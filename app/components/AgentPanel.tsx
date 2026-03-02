@@ -259,7 +259,16 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
     const vapi = new Vapi(publicKey);
     vapiRef.current = vapi;
 
-    vapi.on("call-start", () => setStatus("active"));
+    vapi.on("call-start", () => {
+      setStatus("active");
+      fetch("/api/call-start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vapi_call_id: callIdRef.current }),
+      }).catch(() => {
+        // Nicht blockieren; /api/summarize macht zusätzlich ein Upsert
+      });
+    });
 
     vapi.on("call-end", () => {
       setStatus("ended");
@@ -375,7 +384,7 @@ export default function AgentPanel({ onCallEnded }: AgentPanelProps) {
           temperature: 0.7,
           maxTokens: 512,
         },
-        voice: { provider: "inworld", voiceId: "Lennart" },
+        voice: { provider: "inworld", voiceId: "Johanna" },
       } as any);
     }
   };

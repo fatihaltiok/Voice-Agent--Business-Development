@@ -34,17 +34,20 @@ Der Agent **Sarah** führt natürliche Erstgespräche, qualifiziert Leads nach 4
 ```
 Browser (Next.js)
 ├── AgentPanel          ← VAPI Web SDK (WebRTC)
-│   ├── Mikrofon → VAPI → Inworld TTS (Lennart)
+│   ├── Mikrofon → VAPI → Inworld TTS (Johanna)
 │   ├── Transkript live
 │   └── Lead-Score live
 └── DashboardPanel      ← Polling /api/dashboard
 
 Next.js API Routes (Node.js)
+├── /api/call-start     ← Legt Call-Datensatz beim Gesprächsstart an
 ├── /api/qualify-lead   ← Lead-Daten speichern + Score berechnen
 ├── /api/book-demo      ← Cal.com Terminbuchung
 ├── /api/dashboard      ← KPI-Aggregation aus SQLite
+├── /api/summarize      ← KI-Summary (mit lokalem Fallback)
+├── /api/emotion        ← Echtzeit-Emotionsanalyse + Coaching
 ├── /api/seed           ← Demo-Daten für sofortige Vorschau
-└── /api/vapi/webhook   ← Für echte Telefonanrufe (Produktiv)
+└── /api/vapi/webhook   ← Für echte Telefonanrufe (Produktiv, mit Secret/Signatur)
 
 Daten
 └── data/voice-agent.db (SQLite)
@@ -56,7 +59,7 @@ Daten
 
 ```
 Lead spricht → VAPI STT (Deepgram) → GPT-4o-mini (Sarah)
-    → Inworld TTS (Lennart) → Lead hört Antwort
+    → Inworld TTS (Johanna) → Lead hört Antwort
     → LEAD_DATA/BOOKING Marker → API Routes → SQLite
     → Dashboard aktualisiert
 ```
@@ -86,7 +89,7 @@ Lead spricht → VAPI STT (Deepgram) → GPT-4o-mini (Sarah)
 | Voice Platform | VAPI (WebRTC, < 1.5s Latenz) |
 | LLM | OpenAI GPT-4o-mini |
 | STT | Deepgram Nova-2 (Deutsch) |
-| TTS | Inworld (Lennart) |
+| TTS | Inworld (Johanna) |
 | Kalender | Cal.com API |
 | Datenbank | SQLite (better-sqlite3) |
 | Styling | Tailwind CSS 4, Glassmorphism |
@@ -120,6 +123,12 @@ cp .env.example .env.local
 # Pflicht
 NEXT_PUBLIC_VAPI_PUBLIC_KEY=dein_vapi_public_key
 
+# Optional aber empfohlen: schützt /api/vapi/webhook
+VAPI_WEBHOOK_SECRET=dein_webhook_secret
+
+# Optional: für Emotionsanalyse + KI-Summary
+ANTHROPIC_API_KEY=sk-ant-...
+
 # Optional: Cal.com für echte Terminbuchung
 CALCOM_API_KEY=cal_live_...
 CALCOM_EVENT_TYPE_ID=123456
@@ -139,6 +148,12 @@ npm run dev
 ### Demo-Daten laden
 
 Im Dashboard auf **„Demo-Daten laden"** klicken — 10 realistische Beispiel-Calls werden generiert.
+
+### Webhook-Sicherheit (Produktion)
+
+- Setze `VAPI_WEBHOOK_SECRET` in `.env.local`.
+- Der Webhook akzeptiert dann nur signierte/authorisierte Requests (Header-Secret, Bearer oder `x-vapi-signature` HMAC).
+- Ohne gesetztes Secret ist der Webhook offen (nur für lokale Demo empfohlen).
 
 ---
 
@@ -192,11 +207,14 @@ VAPI erlaubt in der Inline-Config keine `tools`-Property. Als Alternative gibt S
 flowai-voice-agent/
 ├── app/
 │   ├── api/
+│   │   ├── call-start/       ← Call-Insert beim Start
 │   │   ├── book-demo/        ← Cal.com Buchung
 │   │   ├── dashboard/        ← KPI-Daten
+│   │   ├── emotion/          ← Echtzeit-Emotion + Coaching
 │   │   ├── qualify-lead/     ← Lead-Score + SQLite
+│   │   ├── summarize/        ← Gesprächsauswertung + Fallback
 │   │   ├── seed/             ← Demo-Daten
-│   │   └── vapi/webhook/     ← Produktiv-Webhook
+│   │   └── vapi/webhook/     ← Produktiv-Webhook (authentifiziert)
 │   ├── components/
 │   │   ├── AgentPanel.tsx    ← Voice Interface
 │   │   └── DashboardPanel.tsx← KPI Dashboard
